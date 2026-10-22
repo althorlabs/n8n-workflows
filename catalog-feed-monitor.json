@@ -1,0 +1,186 @@
+{
+  "name": "Supplier Feed Daily Change Monitor (Apify)",
+  "nodes": [
+    {
+      "id": "17b7731c-067c-42f7-a01e-da198edc4a95",
+      "name": "Daily schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        100
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "71ce066d-059d-43f6-a0f5-fefbc074a775",
+      "name": "Run once now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "da828205-7847-4c08-a660-1452894a7cf5",
+      "name": "Configure supplier feed",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        200
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"currentFeedUrl\": \"https://YOUR-SUPPLIER-DOMAIN.example/path/catalog.csv\",\n  \"currentFeedText\": \"\",\n  \"previousFeedUrl\": \"\",\n  \"previousFeedText\": \"\",\n  \"useStoredBaseline\": true,\n  \"baselineName\": \"supplier-one\",\n  \"alertEmail\": \"you@example.com\",\n  \"baselineStoreId\": \"\",\n  \"lockQueueId\": \"\"\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "8e00f6cf-1a4d-4c64-af6a-faf44288346e",
+      "name": "Run Catalog Feed Diff",
+      "type": "@apify/n8n-nodes-apify.apify",
+      "typeVersion": 2,
+      "position": [
+        480,
+        200
+      ],
+      "parameters": {
+        "resource": "Actors",
+        "operation": "Run actor and get dataset",
+        "actorId": "hPQawsVIn5gAIhk8c",
+        "customBody": "={{ JSON.stringify({ currentFeedUrl: $json.currentFeedUrl || undefined, currentFeedText: $json.currentFeedText || undefined, previousFeedUrl: $json.previousFeedUrl || undefined, previousFeedText: $json.previousFeedText || undefined, useStoredBaseline: $json.useStoredBaseline, baselineName: $json.baselineName, baselineStoreId: $json.baselineStoreId || undefined, lockQueueId: $json.lockQueueId || undefined, maxItems: 1000 }) }}",
+        "timeout": 120,
+        "memory": 1024,
+        "maxTotalChargeUsd": 0.25,
+        "authentication": "apifyApi"
+      }
+    },
+    {
+      "id": "a9c0801c-8ef6-4df0-a084-3cd6ad31c9b2",
+      "name": "Summarize changed rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const knownTypes = new Set([\"added\", \"removed\", \"price_changed\", \"availability_changed\", \"fields_changed\"]);\nconst clean = (value, limit = 120) => {\n  if (value === null || value === undefined || value === \"\") return \"—\";\n  const text = String(value).replace(/[\\u0000-\\u001f\\u007f]+/g, \" \").replace(/\\s+/g, \" \").trim().slice(0, limit);\n  return text || \"—\";\n};\nconst rows = $input.all().map(item => item.json).filter(row => row.changeType && row.changeType !== \"unchanged\");\nif (rows.length === 0) return [];\nconst primaryCounts = {};\nconst allLabelCounts = {};\nfor (const row of rows) {\n  const primary = knownTypes.has(row.changeType) ? row.changeType : \"other\";\n  primaryCounts[primary] = (primaryCounts[primary] || 0) + 1;\n  const labels = Array.isArray(row.changeTypes) && row.changeTypes.length ? row.changeTypes : [row.changeType];\n  for (const rawLabel of labels) {\n    const label = knownTypes.has(rawLabel) ? rawLabel : \"other\";\n    allLabelCounts[label] = (allLabelCounts[label] || 0) + 1;\n  }\n}\nconst renderCounts = counts => Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([type, count]) => `  ${type}: ${count}`);\nconst maxRows = 50;\nconst itemLines = rows.slice(0, maxRows).map(row => {\n  const parts = [`${clean(row.key)}${row.title ? \" — \" + clean(row.title) : \"\"}`];\n  const labels = Array.isArray(row.changeTypes) && row.changeTypes.length ? row.changeTypes : [row.changeType];\n  parts.push(`changes: ${labels.map(label => knownTypes.has(label) ? label : \"other\").join(\", \")}`);\n  if (row.oldPrice !== null && row.oldPrice !== undefined || row.newPrice !== null && row.newPrice !== undefined) {\n    const currency = clean(row.currency, 12);\n    parts.push(`price: ${clean(row.oldPrice)} ${currency} → ${clean(row.newPrice)} ${currency}`);\n  }\n  if (row.oldAvailability !== null && row.oldAvailability !== undefined || row.newAvailability !== null && row.newAvailability !== undefined) {\n    parts.push(`availability: ${clean(row.oldAvailability)} → ${clean(row.newAvailability)}`);\n  }\n  return `- ${parts.join(\" | \")}`;\n});\nif (rows.length > maxRows) itemLines.push(`- ${rows.length - maxRows} additional changed items omitted; open the full run dataset.`);\nconst config = $(\"Configure supplier feed\").first().json;\nconst runHistory = \"https://console.apify.com/actors/hPQawsVIn5gAIhk8c/runs\";\nconst lines = [\n  `${rows.length} changed items detected for ${clean(config.baselineName)}.`,\n  \"Primary change type per item:\",\n  ...renderCounts(primaryCounts),\n  \"All change labels across items:\",\n  ...renderCounts(allLabelCounts),\n  \"Changed items (up to 50):\",\n  ...itemLines,\n  `Full dataset and run history: ${runHistory}`,\n];\nreturn [{json: {\n  alertEmail: config.alertEmail,\n  baselineName: config.baselineName,\n  changeCount: rows.length,\n  summaryText: lines.join(\"\\n\"),\n}}];"
+      }
+    },
+    {
+      "id": "d5e189c6-3711-449f-afa6-7f29cf93af93",
+      "name": "Email changes",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        960,
+        200
+      ],
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "fromEmail": "catalog-monitor@example.com",
+        "toEmail": "={{ $json.alertEmail }}",
+        "subject": "={{ 'Supplier catalog changes: ' + $json.baselineName }}",
+        "emailFormat": "text",
+        "text": "={{ $json.summaryText }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "7168232e-a2d5-47e1-a99c-979696954e96",
+      "name": "Setup before enabling",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -120
+      ],
+      "parameters": {
+        "content": "Before activation, replace currentFeedUrl with a supplier feed you are authorized to process. Leave previousFeedUrl and previousFeedText empty. The Actor auto-detects common key, price, availability, and title columns; this template does not send explicit column overrides.\n\nThis workflow uses the Actor stored baseline. The first run saves a baseline and returns no change rows, so no email is sent. Later daily runs compare the current feed and send one plain-text summary only when changed rows exist. Each email includes up to 50 item keys/titles and price or availability changes; currency is shown when the feed supplies it. Open the Actor run history for the full dataset.\n\nUse a unique baselineName for each supplier. baselineStoreId and lockQueueId are optional and must be set together. For restricted Apify run tokens, create/select the matching baseline store and per-baseline lock queue, then set both IDs. The lock queue name is derived from baselineName; see the README for the exact rule. The Actor requests READ and WRITE for the selected resources. The name-based path with blank IDs was not covered by this test; run a manual seed check before relying on it.\n\nConfigure the email sender, recipient, and SMTP credential. The schedule is set to 08:00 UTC and is inactive until you activate the workflow. Change the workflow timezone before activation if needed.\n\nRestricted Apify token setup: set baselineStoreId to your authorized key-value store ID and lockQueueId to your authorized request queue ID. For the default baselineName supplier-one, the queue must be named catalog-feed-diff-lock-2888b138787414f7723a47cf. This exact ID-based restricted-token path was tested; blank-ID/name-based restricted-token setup was not.",
+        "height": 400,
+        "width": 440,
+        "color": 5
+      }
+    }
+  ],
+  "connections": {
+    "Daily schedule": {
+      "main": [
+        [
+          {
+            "node": "Configure supplier feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run once now": {
+      "main": [
+        [
+          {
+            "node": "Configure supplier feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configure supplier feed": {
+      "main": [
+        [
+          {
+            "node": "Run Catalog Feed Diff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Catalog Feed Diff": {
+      "main": [
+        [
+          {
+            "node": "Summarize changed rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize changed rows": {
+      "main": [
+        [
+          {
+            "node": "Email changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC"
+  }
+}

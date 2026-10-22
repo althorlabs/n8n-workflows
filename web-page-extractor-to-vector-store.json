@@ -1,0 +1,313 @@
+{
+  "name": "Authorized Web Pages to Vector Store (Apify)",
+  "nodes": [
+    {
+      "id": "8ccfe070-8afa-424c-a93d-8e0907fc75f4",
+      "name": "Run once",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "8d51f20c-9a2b-4ed5-a43b-3616914c5f27",
+      "name": "Configure authorized pages",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        200
+      ],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"urls\": [\n    \"https://YOUR-OWN-DOMAIN.example/\"\n  ],\n  \"authorizedUse\": false,\n  \"outputFormat\": \"markdown\",\n  \"extractionMode\": \"full_body\"\n}",
+        "options": {}
+      }
+    },
+    {
+      "id": "d3aba724-b06f-4305-a733-5ed6ec8d346a",
+      "name": "Run Web Page Extractor",
+      "type": "@apify/n8n-nodes-apify.apify",
+      "typeVersion": 2,
+      "position": [
+        460,
+        200
+      ],
+      "parameters": {
+        "resource": "Actors",
+        "operation": "Run actor and get dataset",
+        "actorId": "YSWZLwk9mEghsxORu",
+        "customBody": "={{ JSON.stringify({ urls: $json.urls, authorizedUse: $json.authorizedUse, outputFormat: $json.outputFormat, extractionMode: $json.extractionMode }) }}",
+        "timeout": 180,
+        "memory": 1024,
+        "maxTotalChargeUsd": 0.25,
+        "authentication": "apifyApi"
+      }
+    },
+    {
+      "id": "26bcbc39-a152-4012-ae09-0d27dec87b39",
+      "name": "Normalize Markdown pages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const pages = $input.all().map(item => item.json).filter(page => page.status === \"success\" && page.output_format === \"markdown\" && typeof page.content === \"string\" && page.content.trim().length > 0);\nif (pages.length === 0) throw new Error(\"Extractor returned no successful Markdown pages.\");\nreturn pages.map(page => ({json: {\n  sourceUrl: page.url,\n  title: page.title || \"\",\n  content: \"Source URL: \" + page.url + \"\\nPage title: \" + (page.title || \"\") + \"\\n\\n\" + page.content\n}}));"
+      }
+    },
+    {
+      "id": "38ce7cb5-3703-4aed-a7cf-959765c8c47f",
+      "name": "Load Markdown documents",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        520
+      ],
+      "parameters": {
+        "dataType": "json",
+        "jsonMode": "allInputData",
+        "textSplittingMode": "simple",
+        "options": {}
+      }
+    },
+    {
+      "id": "4f4ba15b-82cd-4b01-aa41-968d64e44be2",
+      "name": "Google Gemini embeddings for insert",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        880,
+        680
+      ],
+      "parameters": {
+        "modelName": "models/gemini-embedding-001"
+      }
+    },
+    {
+      "id": "967cba04-a731-4afd-aa1d-15e1d0778fe4",
+      "name": "Insert into Simple Vector Store",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1.3,
+      "position": [
+        1180,
+        300
+      ],
+      "parameters": {
+        "mode": "insert",
+        "memoryKey": {
+          "mode": "id",
+          "value": "web-page-extractor-demo-store"
+        },
+        "clearStore": true,
+        "embeddingBatchSize": 50
+      }
+    },
+    {
+      "id": "831478b7-531f-4ff5-a9ac-be37925197be",
+      "name": "Build retrieval query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{json:{query:\"What key information and topics are covered in the imported pages?\"}}];"
+      }
+    },
+    {
+      "id": "4976870e-6b1b-4cd0-a72f-a8edb61753c4",
+      "name": "Retrieve from Simple Vector Store",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1.3,
+      "position": [
+        1660,
+        300
+      ],
+      "parameters": {
+        "mode": "load",
+        "memoryKey": {
+          "mode": "id",
+          "value": "web-page-extractor-demo-store"
+        },
+        "prompt": "={{ $json.query }}",
+        "topK": 3,
+        "includeDocumentMetadata": true,
+        "useReranker": false
+      }
+    },
+    {
+      "id": "bfcece75-8b4c-4bb3-aa2d-6aaa46b679b5",
+      "name": "Google Gemini embeddings for retrieval",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1660,
+        680
+      ],
+      "parameters": {
+        "modelName": "models/gemini-embedding-001"
+      }
+    },
+    {
+      "id": "c0fddb91-cf93-4d23-afd4-3c8913a18bc6",
+      "name": "Assert retrieval",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1900,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const items = $input.all();\nconst normalizedSources = $(\"Normalize Markdown pages\").all();\nconst normalizeUrl = value => {\n  if (typeof value !== \"string\") return null;\n  try {\n    const url = new URL(value.trim());\n    if (url.protocol !== \"http:\" && url.protocol !== \"https:\") return null;\n    url.hash = \"\";\n    if (url.pathname.length > 1) url.pathname = url.pathname.replace(/\\/+$/, \"\");\n    const result = url.toString();\n    return url.pathname === \"/\" ? result : result.replace(/\\/$/, \"\");\n  } catch {\n    return null;\n  }\n};\nconst expectedUrls = new Set(normalizedSources\n  .map(item => normalizeUrl(item.json?.sourceUrl))\n  .filter(Boolean));\nif (items.length === 0) throw new Error(\"Vector retrieval returned no documents.\");\nif (expectedUrls.size === 0) throw new Error(\"No source URLs were available from this execution.\");\nconst sourceUrlKeys = new Set([\"sourceurl\", \"source_url\", \"url\"]);\nconst retrievedUrls = new Set();\nconst collectSourceUrls = (value, key = \"\", depth = 0) => {\n  if (depth > 20 || value === null || value === undefined) return;\n  if (typeof value === \"string\") {\n    if (sourceUrlKeys.has(key.toLowerCase())) {\n      const normalized = normalizeUrl(value);\n      if (normalized) retrievedUrls.add(normalized);\n    }\n    for (const match of value.matchAll(/(?:^|\\n)\\s*Source URL:\\s*(https?:\\/\\/[^\\s\"'<>]+)/gim)) {\n      const normalized = normalizeUrl(match[1].replace(/[),.;]+$/, \"\"));\n      if (normalized) retrievedUrls.add(normalized);\n    }\n    return;\n  }\n  if (Array.isArray(value)) {\n    for (const item of value) collectSourceUrls(item, key, depth + 1);\n    return;\n  }\n  if (typeof value === \"object\") {\n    for (const [childKey, childValue] of Object.entries(value)) {\n      collectSourceUrls(childValue, childKey, depth + 1);\n    }\n  }\n};\nfor (const item of items) collectSourceUrls(item.json || item);\nconst unexpectedUrls = [...retrievedUrls].filter(url => !expectedUrls.has(url));\nif (unexpectedUrls.length > 0) {\n  throw new Error(\"Vector retrieval returned a source URL outside this execution's normalized records.\");\n}\nconst matched = retrievedUrls.size > 0;\nreturn [{json:{\n  retrievalOk:true,\n  retrievedDocuments:items.length,\n  sourceVerification:matched ? \"matched\" : \"unavailable\",\n  matchedSourceUrls:retrievedUrls.size,\n  expectedSourceUrls:expectedUrls.size\n}}];"
+      }
+    },
+    {
+      "id": "ea22153a-a1c5-45c4-a737-1b88fb92a497",
+      "name": "Vector-store limitation",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1180,
+        -120
+      ],
+      "parameters": {
+        "content": "This example uses n8n Simple Vector Store for a development run.\nIts memory is shared across instance users and is lost on restart. Use a persistent vector store for production and keep this memory key unique.\nCollect only pages you own or are authorized to process, subject to site terms.\n\nSetup: connect both Gemini Embeddings nodes to a Google Gemini(PaLM) API credential and keep the same embedding model for insert and retrieval. The credential is intentionally not included. Run only against pages you own or are authorized to process. The Simple Vector Store is shared in memory and clears when this workflow runs; use persistent storage for production.",
+        "height": 280,
+        "width": 460,
+        "color": 5
+      }
+    }
+  ],
+  "connections": {
+    "Run once": {
+      "main": [
+        [
+          {
+            "node": "Configure authorized pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configure authorized pages": {
+      "main": [
+        [
+          {
+            "node": "Run Web Page Extractor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Web Page Extractor": {
+      "main": [
+        [
+          {
+            "node": "Normalize Markdown pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Markdown pages": {
+      "main": [
+        [
+          {
+            "node": "Insert into Simple Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Markdown documents": {
+      "ai_document": [
+        [
+          {
+            "node": "Insert into Simple Vector Store",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini embeddings for insert": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Insert into Simple Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert into Simple Vector Store": {
+      "main": [
+        [
+          {
+            "node": "Build retrieval query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build retrieval query": {
+      "main": [
+        [
+          {
+            "node": "Retrieve from Simple Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini embeddings for retrieval": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Retrieve from Simple Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieve from Simple Vector Store": {
+      "main": [
+        [
+          {
+            "node": "Assert retrieval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC"
+  },
+  "pinData": {},
+  "tags": []
+}
