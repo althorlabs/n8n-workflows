@@ -22,4 +22,4 @@ The owner-authorized smoke test returned three pages (HTTP 200, depths 0/1/1) an
 - [Apify n8n integration and credential setup](https://docs.apify.com/integrations/n8n)
 - [Gemini embeddings documentation](https://ai.google.dev/gemini-api/docs/embeddings) and [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing)
 
-The workflow template is free under the MIT license. The Actor charges USD 0.005 per emitted dataset row, including skipped and error records, or USD 5 per 1,000 rows. Standard platform usage is included in the Actor price. Gemini embedding requests and n8n hosting have separate costs. Check the linked provider pages for current rates before increasing page or URL limits.
+The workflow template is free under the MIT license. The Actor charges USD 0.002 per successful page; failed and skipped pages are not charged. Standard platform usage is included in the Actor price. Gemini embedding requests and n8n hosting have separate costs. Check the linked provider pages for current rates before increasing page or URL limits.
