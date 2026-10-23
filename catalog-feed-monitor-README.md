@@ -31,7 +31,7 @@ The workflow passed a clean-profile E2E on 2026-10-22 using n8n 2.44.5, Node.js 
 
 ## Data and cost
 
-The Actor receives the feed URL and downloads its contents. It stores the current baseline in its Apify Key-Value Store and uses a Request Queue to serialize runs for each baseline. The workflow does not retain historical feed versions. Configure feed access and retention according to your supplier agreement. The workflow template is free during launch; normal Apify usage, n8n hosting, and SMTP provider charges may apply.
+The Actor receives the feed URL and downloads its contents. It stores the current baseline in its Apify Key-Value Store and uses a Request Queue to serialize runs for each baseline. The workflow does not retain historical feed versions. Configure feed access and retention according to your supplier agreement. The workflow template is free under the MIT license. Catalog Feed Diff charges USD 0.02 per started 1,000 input items across both feeds, plus USD 0.0005 per changed output row. Standard platform usage is included in the Actor price. No email does not imply a free comparison. n8n hosting and SMTP provider charges are separate. Check the linked Actor listing for current pricing.
 
 ## References
 

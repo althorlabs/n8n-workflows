@@ -18,6 +18,6 @@ On October 22, 2026, the catalog workflow passed seed, changed-feed and unchange
 
 These files can be imported directly. The catalog workflow has been submitted to n8n's template library and is awaiting review. The other two are awaiting a submission slot; no n8n library acceptance is claimed.
 
-The templates are free under the MIT license. Apify usage, n8n hosting, SMTP and embedding-provider charges may apply. Provider terms and data-access permissions still apply.
+The templates are free under the MIT license. Their Apify Actors use pay-per-event pricing, detailed in each workflow guide and linked Actor listing. n8n hosting, SMTP and embedding-provider charges are separate. Provider terms and data-access permissions still apply.
 
 [Althor Labs](https://althorlabs.com) · [Apify products](https://apify.com/althorlabs)
